@@ -20,12 +20,12 @@ const int WAITING_TIME = 3;
 
 class FileTransfer {
   int socket_fd;
-  filesize_t get_file_size(FILE* fptr);
+  filesize_t getFileSize(FILE* fptr);
 
  public:
   FileTransfer(int socket_fd);
   void recvFile(std::string destFolder);
-  void sendFile(std::string fileName, std::string srcFolder);
+  void sendFile(FILE* fptr, std::string fileName);
 };
 
 #endif

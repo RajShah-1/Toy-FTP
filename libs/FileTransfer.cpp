@@ -2,14 +2,8 @@
 
 FileTransfer::FileTransfer(int socket_fd) : socket_fd(socket_fd){};
 
-void FileTransfer::sendFile(std::string fileName, std::string srcFolder) {
-  if (srcFolder.length() > 0) {
-    srcFolder = srcFolder + "/";
-  }
-  std::string filePath = srcFolder + fileName;
-  FILE* fptr = fopen(fileName.c_str(), "rb");
-  error_guard(fptr == NULL, "sendFile::Unable to read file");
-  filesize_t fileSize = get_file_size(fptr);
+void FileTransfer::sendFile(FILE* fptr, std::string fileName) {
+  filesize_t fileSize = getFileSize(fptr);
 
   error_guard(send(socket_fd, fileName.c_str(), FILENAME_SIZE, 0) == -1,
               "sendFile::send failed");
@@ -23,7 +17,7 @@ void FileTransfer::sendFile(std::string fileName, std::string srcFolder) {
     error_guard(send(socket_fd, buffer, numbytes, 0) == -1,
                 "sendFile::Send failed");
   }
-  fclose(fptr);
+  // fclose(fptr);
   printf("sendFile::Successful\n");
 }
 
@@ -38,7 +32,6 @@ void FileTransfer::recvFile(std::string destFolder) {
 
   error_guard((numbytes = recv(socket_fd, fileName, FILENAME_SIZE, 0)) == -1,
               "recv_file::socket receive failed");
-  // recv_buffer[numbytes] = '\0';
   printf("recv_file::Receiving: %s\n", fileName);
 
   error_guard((numbytes = recv(socket_fd, &fileSize, sizeof fileSize, 0)) == -1,
@@ -61,22 +54,25 @@ void FileTransfer::recvFile(std::string destFolder) {
       break;
     }
     memset(recv_buffer, 0, BUFFER_SIZE);
+
+    // printf("recv_file::Wrote %lu bytes\n", totNumBytes);
   }
+  fclose(fptr);
   printf("recv_file::File received successfully: Wrote %lu bytes\n",
          totNumBytes);
   error_guard(numbytes == -1, "recv_file::Receive failed");
 }
 
-filesize_t FileTransfer::get_file_size(FILE* fptr) {
+filesize_t FileTransfer::getFileSize(FILE* fptr) {
   filesize_t fileSize;
   struct stat fileInfo;
   // go to the end of the file
-  error_guard(fseek(fptr, 0L, SEEK_END) != 0, "get_file_size::fseek failed");
+  error_guard(fseek(fptr, 0L, SEEK_END) != 0, "getFileSize::fseek failed");
   // read the current position (gives fileSize)
   fileSize = ftell(fptr);
-  error_guard(fileSize < 0, "get_file_size::ftell failed");
+  error_guard(fileSize < 0, "getFileSize::ftell failed");
   // go back to the start of the file
   rewind(fptr);
-  printf("get_file_size::File Size: %lu\n", fileSize);
+  printf("getFileSize::File Size: %lu\n", fileSize);
   return fileSize;
 }

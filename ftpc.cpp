@@ -2,6 +2,7 @@
 
 const char* PORT_NUM = "3490";
 const int COMMAND_SIZE = 100;
+const int STATUS_SIZE = 10;
 
 void readString(char* buffer, int bufferSize) {
   fgets(buffer, bufferSize, stdin);
@@ -10,25 +11,48 @@ void readString(char* buffer, int bufferSize) {
     buffer[strlen(buffer) - 1] = '\0';
 }
 
-void handle_ftp(int socket_fd) {
+void handleFTP(int socket_fd) {
   FileTransfer ftp(socket_fd);
   char fileName[FILENAME_SIZE];
+  char status[STATUS_SIZE];
   char command[COMMAND_SIZE];
+  int numbytes;
   while (1) {
     printf("Enter command: ");
     readString(command, COMMAND_SIZE);
     printf("Entered: %s\n", command);
 
     if (strcasecmp(command, "PUT") == 0) {
+      // ask for the file name
       printf("Enter file name: ");
       readString(fileName, FILENAME_SIZE);
+      FILE* fptr = fopen(fileName, "rb");
+      if (fptr == NULL) {
+        printf("Unable to open the file. Try again.\n");
+        continue;
+      }
+      // send the command to the server
+      error_guard(send(socket_fd, command, COMMAND_SIZE, 0) == -1,
+                  "send failed");
       printf("Sending %s to the server...\n", fileName);
-      ftp.sendFile(std::string(fileName), ".");
+      ftp.sendFile(fptr, std::string(fileName));
+      fclose(fptr);
     } else if (strcasecmp(command, "GET") == 0) {
       printf("Enter file name: ");
       readString(fileName, FILENAME_SIZE);
       printf("Requesting %s from server...\n", fileName);
-      ftp.recvFile("");
+      error_guard(send(socket_fd, command, COMMAND_SIZE, 0) == -1,
+                  "send failed");
+      error_guard(send(socket_fd, fileName, FILENAME_SIZE, 0) == -1,
+                  "send failed");
+      error_guard((numbytes = recv(socket_fd, status, STATUS_SIZE, 0)) == -1,
+                  "receive failed");
+      if (strcasecmp(status, "FOUND") == 0) {
+        ftp.recvFile(".");
+      } else {
+        printf("File not available on the server\n");
+        continue;
+      }
     } else if (strcasecmp(command, "EXIT") == 0) {
       return;
     }
@@ -73,7 +97,7 @@ int main() {
   }
   // serv_info is no longer required
   freeaddrinfo(serv_info);
-  handle_ftp(socket_fd);
+  handleFTP(socket_fd);
   // Close socket file descriptior
   close(socket_fd);
 }

@@ -1,15 +1,50 @@
 #include "./libs/include/FileTransfer.hpp"
 
 const char* PORT_NUM = "3490";
+const int COMMAND_SIZE = 100;
+const int STATUS_SIZE = 10;
 
-void handle_ftp(int socket_fd) {
+void handleFTP(int socket_fd) {
   std::string clientName = "client_1";
-  // receive command from the client
-  // while(1){
-
-  // }
+  int numbytes;
+  char command[COMMAND_SIZE];
+  char fileName[FILENAME_SIZE];
+  char status[STATUS_SIZE];
   FileTransfer ftp(socket_fd);
-  ftp.recvFile("./Server/"+clientName);
+  std::string filePath;
+  std::string dirPath = "./Server/" + clientName;
+
+  while (1) {
+    error_guard((numbytes = recv(socket_fd, command, COMMAND_SIZE, 0)) == -1,
+                "socket receive failed");
+    if (strcasecmp(command, "PUT") == 0) {
+      // receive the file and store it
+      ftp.recvFile(dirPath);
+    } else if (strcasecmp(command, "GET") == 0) {
+      // receive the name of the requested file
+      error_guard(
+          (numbytes = recv(socket_fd, fileName, FILENAME_SIZE, 0)) == -1,
+          "socket receive failed");
+      // send the file
+      filePath = dirPath + "/" + std::string(fileName);
+      printf("Attempting to open %s\n", filePath.c_str());
+      FILE* fptr = fopen(filePath.c_str(), "rb");
+      if (fptr == NULL) {
+        // File not found
+        printf("File not found\n");
+        error_guard(send(socket_fd, "NOTFOUND", STATUS_SIZE, 0) == -1,
+                    "send failed");
+
+      } else {
+        error_guard(send(socket_fd, "FOUND", STATUS_SIZE, 0) == -1,
+                    "send failed");
+        ftp.sendFile(fptr, fileName);
+        fclose(fptr);
+      }
+    } else if (strcasecmp(command, "EXIT") == 0) {
+      return;
+    }
+  }
 }
 
 int main() {
@@ -64,7 +99,7 @@ int main() {
             sizeof ipstr);
   printf("server: got connection from %s\n", ipstr);
 
-  handle_ftp(new_fd);
+  handleFTP(new_fd);
   // clean up
   close(new_fd);
   close(socket_fd);
