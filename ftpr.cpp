@@ -4,7 +4,8 @@ const char* PORT_NUM = "3490";
 const int COMMAND_SIZE = 100;
 const int STATUS_SIZE = 10;
 
-void handleFTP(int socket_fd) {
+void* handleFTP(void* args) {
+  int socket_fd = *(int*)args;
   std::string clientName = "client_1";
   int numbytes;
   char command[COMMAND_SIZE];
@@ -17,6 +18,9 @@ void handleFTP(int socket_fd) {
   while (1) {
     error_guard((numbytes = recv(socket_fd, command, COMMAND_SIZE, 0)) == -1,
                 "socket receive failed");
+    if (numbytes == 0) {
+      pthread_exit(NULL);
+    }
     if (strcasecmp(command, "PUT") == 0) {
       // receive the file and store it
       ftp.recvFile(dirPath);
@@ -42,7 +46,9 @@ void handleFTP(int socket_fd) {
         fclose(fptr);
       }
     } else if (strcasecmp(command, "EXIT") == 0) {
-      return;
+      printf("Received exit from the user\n");
+      pthread_exit(NULL);
+      // return NULL;
     }
   }
 }
@@ -85,21 +91,27 @@ int main() {
   // serv_info is no longer required
   freeaddrinfo(serv_info);
 
-  printf("Waiting for the client...\n");
+  printf("Waiting for clients...\n");
 
-  // Accept new connection
   addr_size = sizeof their_addr;
-  new_fd = accept(socket_fd, (struct sockaddr*)&their_addr, &addr_size);
-  if (new_fd == -1) {
-    perror("accept failed\n");
-    exit(EXIT_FAILURE);
-  }
-  inet_ntop(their_addr.ss_family,
-            &(((struct sockaddr_in*)(&their_addr))->sin_addr), ipstr,
-            sizeof ipstr);
-  printf("server: got connection from %s\n", ipstr);
+  pthread_t tid;
+  while (1) {
+    // Accept new connection
+    new_fd = accept(socket_fd, (struct sockaddr*)&their_addr, &addr_size);
+    if (new_fd == -1) {
+      perror("accept failed\n");
+      exit(EXIT_FAILURE);
+    }
+    inet_ntop(their_addr.ss_family,
+              &(((struct sockaddr_in*)(&their_addr))->sin_addr), ipstr,
+              sizeof ipstr);
+    printf("server: got connection from %s\n", ipstr);
 
-  handleFTP(new_fd);
+    pthread_create(&tid, NULL, handleFTP, &new_fd);
+    // We don't need to join the thread lates
+    // So, no strings attached!
+    pthread_detach(tid);
+  }
   // clean up
   close(new_fd);
   close(socket_fd);

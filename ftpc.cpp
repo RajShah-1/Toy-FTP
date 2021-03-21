@@ -54,6 +54,9 @@ void handleFTP(int socket_fd) {
         continue;
       }
     } else if (strcasecmp(command, "EXIT") == 0) {
+      // send the command to the server
+      error_guard(send(socket_fd, command, COMMAND_SIZE, 0) == -1,
+                  "send failed");
       return;
     }
   }
