@@ -1,4 +1,5 @@
 #include "./libs/include/FileTransfer.hpp"
+#include "./libs/include/FileTransfer.hpp"
 
 const char* PORT_NUM = "3490";
 const int COMMAND_SIZE = 100;
@@ -6,15 +7,26 @@ const int STATUS_SIZE = 10;
 
 void* handleFTP(void* args) {
   int socket_fd = *(int*)args;
-  std::string clientName = "client_1";
+
   int numbytes;
   char command[COMMAND_SIZE];
   char fileName[FILENAME_SIZE];
   char status[STATUS_SIZE];
   FileTransfer ftp(socket_fd);
+  char userName[USERNAME_SIZE];
+  char password[PASSWORD_SIZE];
   std::string filePath;
+  Authorization auth;
+
+  error_guard((numbytes = recv(socket_fd, userName, USERNAME_SIZE, 0)) == -1,
+              "socket receive failed");
+  error_guard((numbytes = recv(socket_fd, password, PASSWORD_SIZE, 0)) == -1,
+              "socket receive failed");
+  if(auth)
+  std::string clientName = "client_1";
   std::string dirPath = "./Server/" + clientName;
 
+  // Handle Auth
   while (1) {
     error_guard((numbytes = recv(socket_fd, command, COMMAND_SIZE, 0)) == -1,
                 "socket receive failed");

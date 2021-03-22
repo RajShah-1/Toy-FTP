@@ -1,3 +1,4 @@
+#include "./libs/include/Authorization.hpp"
 #include "./libs/include/FileTransfer.hpp"
 
 const char* PORT_NUM = "3490";
@@ -16,7 +17,21 @@ void handleFTP(int socket_fd) {
   char fileName[FILENAME_SIZE];
   char status[STATUS_SIZE];
   char command[COMMAND_SIZE];
+  char userName[USERNAME_SIZE];
+  char password[PASSWORD_SIZE];
   int numbytes;
+  printf("Username: ");
+  readString(userName, USERNAME_SIZE);
+  printf("Password: ");
+  readString(password, PASSWORD_SIZE);
+
+  // send the username and the password to the server
+  error_guard(send(socket_fd, userName, USERNAME_SIZE, 0) == -1, "send failed");
+  error_guard(send(socket_fd, password, PASSWORD_SIZE, 0) == -1, "send failed");
+
+  error_guard((numbytes = recv(socket_fd, status, STATUS_SIZE, 0)) == -1,
+              "receive failed");
+  // Handle Auth
   while (1) {
     printf("Enter command: ");
     readString(command, COMMAND_SIZE);
