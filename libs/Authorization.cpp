@@ -12,9 +12,14 @@ Authorization::Authorization() {
   this->users.insert(std::make_pair(user4.name, user4));
 }
 
+Authorization::~Authorization() {}
+
 bool Authorization::authenticate(std::string userName, std::string password) {
+  if(this->users.find(userName) == this->users.end()){
+    return false;
+  }
   UserInfo user = this->users[userName];
-  return (password == user.password) {
+  if (password == user.password) {
     this->isLoggedIn = true;
     this->currentUser = &user;
     return true;
@@ -30,7 +35,14 @@ void Authorization::logout(void) {
 }
 
 std::string Authorization::getCurrentUserName(void) {
-  return this->currentUser.name;
+  if (!this->isLoggedIn) {
+    printf(
+        "Authorization::Warning: current user name is requested but no user is "
+        "active\n");
+  }
+  return this->currentUser->name;
 }
 
-bool Authorization::isActive(std::string userName) { return this->isLoggedIn; }
+bool Authorization::isUserLoggedIn(std::string userName) {
+  return this->isLoggedIn;
+}

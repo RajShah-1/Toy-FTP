@@ -2,6 +2,8 @@
 #include "./libs/include/FileTransfer.hpp"
 
 const char* PORT_NUM = "3490";
+const int COMMAND_SIZE = 100;
+const int STATUS_SIZE = 10;
 
 void* handleFTP(void* args) {
   int socket_fd = *(int*)args;
@@ -10,7 +12,7 @@ void* handleFTP(void* args) {
   char command[COMMAND_SIZE];
   char fileName[FILENAME_SIZE];
   char status[STATUS_SIZE];
-  FileTransfer ftp(socket_fd, false, false);
+  FileTransfer ftp(socket_fd);
   char userName[USERNAME_SIZE];
   char password[PASSWORD_SIZE];
   std::string filePath;
@@ -50,27 +52,19 @@ void* handleFTP(void* args) {
       // send the file
       filePath = dirPath + "/" + std::string(fileName);
       printf("Attempting to open %s\n", filePath.c_str());
-      FILE* fptr;
-      if (strcasecmp(ftp.getMode(), "B") == 0) {
-        fptr = fopen(filePath.c_str(), "rb");
-      } else {
-        fptr = fopen(filePath.c_str(), "r");
-      }
+      FILE* fptr = fopen(filePath.c_str(), "rb");
       if (fptr == NULL) {
         // File not found
         printf("File not found\n");
         error_guard(send(socket_fd, "NOTFOUND", STATUS_SIZE, 0) == -1,
                     "send failed");
+
       } else {
         error_guard(send(socket_fd, "FOUND", STATUS_SIZE, 0) == -1,
                     "send failed");
         ftp.sendFile(fptr, fileName);
         fclose(fptr);
       }
-    } else if (strcasecmp(command, "MODEB") == 0) {
-      ftp.setMode("B");
-    } else if (strcasecmp(command, "MODEC") == 0) {
-      ftp.setMode("C");
     } else if (strcasecmp(command, "LOGOUT") == 0) {
       auth.logout();
     } else if (strcasecmp(command, "EXIT") == 0) {

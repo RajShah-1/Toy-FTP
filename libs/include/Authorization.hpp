@@ -13,14 +13,15 @@ const int PASSWORD_SIZE = 10;
 struct UserInfo {
   std::string name;
   std::string password;
-  bool isLoggedIn;
   UserInfo(std::string name, std::string password)
-      : name(name), password(password), isActive(false) {}
+      : name(name), password(password) {}
+  UserInfo(){}
 };
 
 class Authorization {
-  static std::unordered_map<std::string, UserInfo> users;
+  std::unordered_map<std::string, UserInfo> users;
   UserInfo* currentUser;
+  bool isLoggedIn;
 
  public:
   Authorization();
@@ -28,7 +29,7 @@ class Authorization {
   bool authenticate(std::string userName, std::string password);
   void logout(void);
   std::string getCurrentUserName(void);
-  bool isActive(std::string userName);
+  bool isUserLoggedIn(std::string userName);
 };
 
 #endif

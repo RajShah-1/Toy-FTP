@@ -2,6 +2,8 @@
 #include "./libs/include/FileTransfer.hpp"
 
 const char* PORT_NUM = "3490";
+const int COMMAND_SIZE = 100;
+const int STATUS_SIZE = 10;
 
 void readString(char* buffer, int bufferSize) {
   fgets(buffer, bufferSize, stdin);
@@ -11,7 +13,7 @@ void readString(char* buffer, int bufferSize) {
 }
 
 void handleFTP(int socket_fd) {
-  FileTransfer ftp(socket_fd, true, true);
+  FileTransfer ftp(socket_fd);
   char fileName[FILENAME_SIZE];
   char status[STATUS_SIZE];
   char command[COMMAND_SIZE];
@@ -53,12 +55,7 @@ void handleFTP(int socket_fd) {
       // ask for the file name
       printf("Enter file name: ");
       readString(fileName, FILENAME_SIZE);
-      FILE* fptr;
-      if (strcasecmp(ftp.getMode(), "B") == 0) {
-        fptr = fopen(fileName, "rb");
-      } else {
-        fptr = fopen(fileName, "r");
-      }
+      FILE* fptr = fopen(fileName, "rb");
       if (fptr == NULL) {
         printf("Unable to open the file. Try again.\n");
         continue;
@@ -77,7 +74,7 @@ void handleFTP(int socket_fd) {
                   "send failed");
       error_guard(send(socket_fd, fileName, FILENAME_SIZE, 0) == -1,
                   "send failed");
-      error_guard((numbytes = recv(socket_fd, status, STATUS_SIZE, 0)) == -1,
+      error_guard((numbytes = recv(socket_fd, status, STATUS_SIZE , 0)) == -1,
                   "receive failed");
       if (strcasecmp(status, "FOUND") == 0) {
         ftp.recvFile(".");
@@ -85,13 +82,6 @@ void handleFTP(int socket_fd) {
         printf("File not available on the server\n");
         continue;
       }
-    } else if (strcasecmp(command, "MODE") == 0) {
-      printf("Enter mode (b for binary mode and c for character mode): @@#");
-      // size is 3 instead of 1 to absorb excess '\n's
-      char mode[3];
-      readString(mode, 3);
-      // continue;
-      ftp.setMode(mode);
     } else if (strcasecmp(command, "EXIT") == 0) {
       // send the command to the server
       error_guard(send(socket_fd, command, COMMAND_SIZE, 0) == -1,
