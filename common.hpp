@@ -12,6 +12,7 @@ const int CMD_TYPE_SIZE = 20;
 const int CMD_ARG_SIZE = 80;
 const int CMD_SIZE = CMD_ARG_SIZE + CMD_TYPE_SIZE;
 const int USERNAME_LEN = 30;
+const int PASSWORD_LEN = 30;
 const int STATUS_SIZE = 10;
 
 inline static void write_log(char userName[USERNAME_LEN], const char* format,

@@ -32,6 +32,8 @@ int setupSocket(void);
 size_t getFileSize(FILE* fptr);
 int newRecv(int socket_fd, void* buffer, size_t buffer_size);
 void newSend(int socket_fd, const void* buffer, size_t buffer_size);
+bool authenticate(int socket_fd, char username[USERNAME_LEN],
+                  char password[PASSWORD_LEN]);
 
 int main() {
   struct sockaddr_storage client_addr;
@@ -70,8 +72,19 @@ void* handleFTP(void* args) {
   int socket_fd = *(int*)args;
   char command[CMD_SIZE];
   char username[USERNAME_LEN] = "raj";
+  char password[PASSWORD_LEN] = "raj";
   bool isBinary = true;
-  printf("Connection received\n");
+  bool isLoggedIn = false;
+
+  while (!isLoggedIn) {
+    try {
+      isLoggedIn = authenticate(socket_fd, username, password);
+    } catch (const char* error_msg) {
+      printf("[AUTH ERROR] %s\n", error_msg);
+    }
+  }
+  printf("%s logged in\n", username);
+
   try {
     while (1) {
       newRecv(socket_fd, command, CMD_SIZE);
@@ -82,6 +95,33 @@ void* handleFTP(void* args) {
   } catch (const char* error_msg) {
     printf("[ERROR] %s\n", error_msg);
   }
+}
+
+bool authenticate(int socket_fd, char username[USERNAME_LEN],
+                  char password[PASSWORD_LEN]) {
+  // fetch the list of users and passwords from the file
+  newRecv(socket_fd, username, USERNAME_LEN);
+  newRecv(socket_fd, password, PASSWORD_LEN);
+
+  const char* authFile = "./Server/auth.txt";
+  FILE* authFptr = fopen(authFile, "r");
+  if (authFptr == NULL) {
+    printf("Unable to open auth.txt");
+    pthread_exit(NULL);
+  }
+  printf("USERS:\n");
+  char authUsr[USERNAME_LEN], authPass[PASSWORD_LEN];
+  while (fscanf(authFptr, " %s %s", authUsr, authPass) == 2) {
+    printf("Entry: %s %s\n", authUsr, authPass);
+    if (strcmp(authUsr, username) == 0) {
+      if (strcmp(password, authPass) == 0) {
+        newSend(socket_fd, "SUCCESS", STATUS_SIZE);
+      }
+    }
+  }
+  newSend(socket_fd, "DENIED", STATUS_SIZE);
+  fclose(authFptr);
+  return false;
 }
 
 void handleCommands(int socket_fd, char command[CMD_SIZE],

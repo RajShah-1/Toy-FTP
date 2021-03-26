@@ -17,6 +17,8 @@ void newSend(int socket_fd, const void* buffer, size_t buffer_size);
 int newRecv(int socket_fd, void* buffer, size_t buffer_size);
 size_t getFileSize(FILE* fptr);
 void printProgress(unsigned long eFinished, unsigned long eTotal);
+bool authenticate(int socket_fd, char username[USERNAME_LEN],
+                  char password[PASSWORD_LEN]);
 
 void handleFTP(int socket_fd);
 void handleCommands(int socket_fd, char command[CMD_SIZE], bool& isBinary);
@@ -38,7 +40,18 @@ int main() {
 void handleFTP(int socket_fd) {
   char command[CMD_SIZE];
   bool isBinary = true;
-  printf("Connection Success!\n");
+  printf("Connected Successfully!\n");
+  // client authentication
+  char username[USERNAME_LEN];
+  char password[PASSWORD_LEN];
+
+  bool isAuthSuccess = authenticate(socket_fd, username, password);
+  while (!isAuthSuccess) {
+    printf("Authentication failed\n");
+    printf("Try again\n");
+    isAuthSuccess = authenticate(socket_fd, username, password);
+  }
+  printf("Logged in as %s\n", username);
 
   while (1) {
     printf(">> ");
@@ -51,6 +64,21 @@ void handleFTP(int socket_fd) {
     }
     memset(command, 0, CMD_SIZE);
   }
+}
+
+bool authenticate(int socket_fd, char username[USERNAME_LEN],
+                  char password[PASSWORD_LEN]) {
+  printf("User name: ");
+  scanf(" %s", username);
+  printf("Password: ");
+  scanf(" %s", password);
+
+  newSend(socket_fd, username, USERNAME_LEN);
+  newSend(socket_fd, password, PASSWORD_LEN);
+
+  char status[STATUS_SIZE];
+  newRecv(socket_fd, status, STATUS_SIZE);
+  return (strcasecmp(status, "SUCCESS") == 0);  
 }
 
 void handleCommands(int socket_fd, char command[CMD_SIZE], bool& isBinary) {
