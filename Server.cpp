@@ -22,6 +22,8 @@ void handleCommands(int socket_fd, char command[CMD_SIZE],
 void handleLIST(int socket_fd, char username[USERNAME_LEN]);
 void handleGET(int socket_fd, char command[CMD_SIZE],
                char username[USERNAME_LEN], bool isBinary);
+void handlePUT(int socket_fd, char command[CMD_SIZE],
+               char username[USERNAME_LEN], bool isBinary);
 
 int setupSocket(void);
 size_t getFileSize(FILE* fptr);
@@ -90,7 +92,7 @@ void handleCommands(int socket_fd, char command[CMD_SIZE],
   if (strcasecmp(cmd_type, "GET") == 0) {
     handleGET(socket_fd, command, username, isBinary);
   } else if ((strcasecmp(cmd_type, "PUT") == 0)) {
-    // handlePUT(socket_fd, command);
+    handlePUT(socket_fd, command, username, isBinary);
   } else if ((strcasecmp(cmd_type, "MODE") == 0)) {
     // handleMODE(socket_fd, command);
   } else if ((strcasecmp(cmd_type, "LIST") == 0)) {
@@ -104,6 +106,100 @@ void handleCommands(int socket_fd, char command[CMD_SIZE],
   } else {
     throw "Invalid command";
   }
+}
+
+void handleLIST(int socket_fd, char username[USERNAME_LEN]) {
+  printf("LIST\n");
+  // open the dir
+  DIR* dir;
+  struct dirent* dir_entry;
+  std::string dir_path = "./Server/" + std::string(username);
+  dir = opendir(dir_path.c_str());
+  // make a space seperated list of filenames
+  std::string fileNames = "";
+  if (dir) {
+    while ((dir_entry = readdir(dir)) != NULL) {
+      if (strcmp(dir_entry->d_name, ".") == 0 ||
+          strcmp(dir_entry->d_name, "..") == 0) {
+        continue;
+      }
+      fileNames += std::string(dir_entry->d_name) + " ";
+    }
+    closedir(dir);
+  }
+  const char* fileNamesC = fileNames.c_str();
+  size_t numbytes = strlen(fileNamesC) + 1;  // +1 for null termination
+  // send the number of characters in the space seperated list of the filenames
+  newSend(socket_fd, &numbytes, sizeof(size_t));
+  // send filenames for all the files
+  newSend(socket_fd, fileNamesC, numbytes);
+}
+
+void handlePUT(int socket_fd, char command[CMD_SIZE],
+               char username[USERNAME_LEN], bool isBinary) {
+  char argFileName[CMD_ARG_SIZE];
+  if (sscanf(command, "%*s %s", argFileName) != 1) {
+    throw "Invalid filename";
+  }
+  // check if the file creation is possible
+  FILE* fptr;
+
+  std::string filePath =
+      ("./Server/" + std::string(username) + "/" + std::string(argFileName));
+  const char* filePathC = filePath.c_str();
+  // check if we need to create a new file
+  bool isFilePresent = (access(filePathC, F_OK) == 0);
+  bool isAppend = false;
+  if (isFilePresent) {
+    // send NOTFOUND
+    newSend(socket_fd, "FOUND", STATUS_SIZE);
+    // recv the option from the user
+    char option[STATUS_SIZE];
+    newRecv(socket_fd, option, STATUS_SIZE);
+    if (strcasecmp(option, "ABORT") == 0) {
+      printf("Aborted PUT\n");
+      return;
+    }
+    if (strcasecmp(option, "APPEND") == 0 && !isBinary) {
+      printf("PUT conflict -> Append\n");
+      // Append is only supported in char mode
+      isAppend = true;
+    } else {
+      printf("PUT conflict -> Overwrite\n");
+    }
+  } else {
+    // Send FOUND
+    newSend(socket_fd, "NOTFOUND", STATUS_SIZE);
+  }
+  printf("PUT mode: %s\n", (isBinary ? "Binary" : "Character"));
+  if (isBinary)
+    fptr = fopen(filePathC, "wb");
+  else
+    fptr = fopen(filePathC, "w");
+
+  if (fptr == NULL) throw "Unable to create the file";
+
+  // receive the file size
+  size_t filesize;
+  char recvBuffer[BUFFER_SIZE];
+  newRecv(socket_fd, &filesize, sizeof(size_t));
+  printf("File size %lu bytes\n", filesize);
+
+  // receive the file packet by packet
+  size_t totBytesRcvd = 0, numBytes = 0;
+  while (totBytesRcvd < filesize) {
+    numBytes = newRecv(socket_fd, recvBuffer,
+                       std::min((size_t)BUFFER_SIZE, filesize - totBytesRcvd));
+    if (fwrite(recvBuffer, sizeof(char), numBytes, fptr) != numBytes) {
+      fclose(fptr);
+      throw "Write error";
+    }
+    totBytesRcvd += numBytes;
+  }
+  printf("File received successfully\n");
+
+  // close the fd
+  fclose(fptr);
 }
 
 void handleGET(int socket_fd, char command[CMD_SIZE],
@@ -140,37 +236,15 @@ void handleGET(int socket_fd, char command[CMD_SIZE],
   size_t numBytes = 0, totBytesSent = 0;
   while (totBytesSent < fileSize) {
     numBytes = fread(sendBuffer, sizeof(char), BUFFER_SIZE, fptr);
+    if (numBytes < 0) {
+      fclose(fptr);
+      throw "fread failed";
+    }
     newSend(socket_fd, sendBuffer, numBytes);
     totBytesSent += numBytes;
   }
   printf("File sent successfully\n");
-}
-
-void handleLIST(int socket_fd, char username[USERNAME_LEN]) {
-  printf("LIST\n");
-  // open the dir
-  DIR* dir;
-  struct dirent* dir_entry;
-  std::string dir_path = "./Server/" + std::string(username);
-  dir = opendir(dir_path.c_str());
-  // make a space seperated list of filenames
-  std::string fileNames = "";
-  if (dir) {
-    while ((dir_entry = readdir(dir)) != NULL) {
-      if (strcmp(dir_entry->d_name, ".") == 0 ||
-          strcmp(dir_entry->d_name, "..") == 0) {
-        continue;
-      }
-      fileNames += std::string(dir_entry->d_name) + " ";
-    }
-    closedir(dir);
-  }
-  const char* fileNamesC = fileNames.c_str();
-  size_t numbytes = strlen(fileNamesC) + 1;  // +1 for null termination
-  // send the number of characters in the space seperated list of the filenames
-  newSend(socket_fd, &numbytes, sizeof(size_t));
-  // send filenames for all the files
-  newSend(socket_fd, fileNamesC, numbytes);
+  fclose(fptr);
 }
 
 void newSend(int socket_fd, const void* buffer, size_t buffer_size) {

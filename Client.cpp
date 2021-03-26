@@ -15,12 +15,14 @@ int setupSocket(void);
 void readString(char* buffer, int bufferSize);
 void newSend(int socket_fd, const void* buffer, size_t buffer_size);
 int newRecv(int socket_fd, void* buffer, size_t buffer_size);
+size_t getFileSize(FILE* fptr);
 void printProgress(unsigned long eFinished, unsigned long eTotal);
 
 void handleFTP(int socket_fd);
-void handleCommands(int socket_fd, char command[CMD_SIZE]);
-void handleGET(int socket_fd, char command[CMD_SIZE]);
+void handleCommands(int socket_fd, char command[CMD_SIZE], bool isBinary);
 void handleLIST(int socket_fd, char command[CMD_SIZE]);
+void handleGET(int socket_fd, char command[CMD_SIZE], bool isBinary);
+void handlePUT(int socket_fd, char command[CMD_SIZE], bool isBinary);
 
 int main() {
   // setup the connection
@@ -33,6 +35,7 @@ int main() {
 
 void handleFTP(int socket_fd) {
   char command[CMD_SIZE];
+  bool isBinary = true;
   printf("Connection Success!\n");
 
   while (1) {
@@ -40,7 +43,7 @@ void handleFTP(int socket_fd) {
     readString(command, CMD_SIZE);
     printf("Entered: %s\n", command);
     try {
-      handleCommands(socket_fd, command);
+      handleCommands(socket_fd, command, isBinary);
     } catch (const char* error_msg) {
       printf("[ERROR] %s\n", error_msg);
     }
@@ -48,7 +51,7 @@ void handleFTP(int socket_fd) {
   }
 }
 
-void handleCommands(int socket_fd, char command[CMD_SIZE]) {
+void handleCommands(int socket_fd, char command[CMD_SIZE], bool isBinary) {
   char cmd_type[CMD_TYPE_SIZE];
   if (sscanf(command, "%s ", cmd_type) != 1) {
     throw "Invalid command";
@@ -56,9 +59,9 @@ void handleCommands(int socket_fd, char command[CMD_SIZE]) {
   printf("Command Type: %s\n", cmd_type);
 
   if (strcasecmp(cmd_type, "GET") == 0) {
-    handleGET(socket_fd, command);
+    handleGET(socket_fd, command, isBinary);
   } else if ((strcasecmp(cmd_type, "PUT") == 0)) {
-    // handlePUT(socket_fd, command);
+    handlePUT(socket_fd, command, isBinary);
   } else if ((strcasecmp(cmd_type, "MODE") == 0)) {
     // handleMODE(socket_fd, command);
   } else if ((strcasecmp(cmd_type, "LIST") == 0)) {
@@ -97,8 +100,73 @@ void handleLIST(int socket_fd, char command[CMD_SIZE]) {
   free(filenames);
 }
 
-void handleGET(int socket_fd, char command[CMD_SIZE]) {
-  bool isBinary = true;
+void handlePUT(int socket_fd, char command[CMD_SIZE], bool isBinary) {
+  char filename[CMD_ARG_SIZE];
+  if (sscanf(command, "%*s %s", filename) != 1) {
+    throw "Invalid filename";
+  }
+  // check if the file exist or not
+  bool isFileAvl = (access(filename, F_OK) != 0);
+  if (isFileAvl) {
+    throw "File does not exist";
+  }
+  // Attempt to open the file
+  printf("Attempting to open %s\n", filename);
+  FILE* fptr;
+  if (isBinary)
+    fptr = fopen(filename, "rb");
+  else
+    fptr = fopen(filename, "r");
+
+  if (fptr == NULL) throw "Unable to create the file";
+
+  // Send "PUT" and the file name
+  newSend(socket_fd, command, CMD_SIZE);
+
+  // receive the status from the server
+  char status[STATUS_SIZE];
+  newRecv(socket_fd, status, STATUS_SIZE);
+  if (strcasecmp(status, "FOUND") == 0) {
+    // if the file is already present on the server
+    // ask user whether to abort/overwrite/append
+    printf("The file already exists on the server\n");
+    printf("Enter Abort/Overwrite/Append: ");
+    char option[STATUS_SIZE];
+    scanf(" %s", option);
+    printf("You entered: %s\n", option);
+
+    if (strcasecmp(option, "ABORT") == 0 ||
+        strcasecmp(option, "OVERWRITE") == 0 ||
+        strcasecmp(option, "APPEND") == 0) {
+      newSend(socket_fd, option, STATUS_SIZE);
+      if (strcasecmp(option, "ABORT") == 0) {
+        fclose(fptr);
+        return;
+      }
+    } else {
+      printf("Invalid option\n");
+      return;
+    }
+  }
+  // send the file size
+  size_t fileSize = getFileSize(fptr);
+  newSend(socket_fd, &fileSize, sizeof(size_t));
+  // send the file
+  char sendBuffer[BUFFER_SIZE];
+  memset(sendBuffer, 0, BUFFER_SIZE);
+  size_t numBytes = 0, totBytesSent = 0;
+  while (totBytesSent < fileSize) {
+    numBytes = fread(sendBuffer, sizeof(char), BUFFER_SIZE, fptr);
+    if (numBytes < 0) throw "fread failed";
+    newSend(socket_fd, sendBuffer, numBytes);
+    totBytesSent += numBytes;
+    printProgress(totBytesSent, fileSize);
+  }
+  printf("\n");
+  printf("File sent successfully\n");
+}
+
+void handleGET(int socket_fd, char command[CMD_SIZE], bool isBinary) {
   char filename[CMD_ARG_SIZE];
   if (sscanf(command, "%*s %s", filename) != 1) {
     throw "Invalid filename";
@@ -148,7 +216,6 @@ void handleGET(int socket_fd, char command[CMD_SIZE]) {
     totBytesRcvd += numBytes;
     printProgress(totBytesRcvd, filesize);
   }
-  // 31993796 975810494
   printf("\n");
 
   // close the fd
@@ -238,6 +305,11 @@ void readString(char* buffer, int bufferSize) {
 
   if ((strlen(buffer) > 0) && (buffer[strlen(buffer) - 1] == '\n'))
     buffer[strlen(buffer) - 1] = '\0';
+  if (strlen(buffer) == 0) {
+    // retry
+    printf("\r>>");
+    readString(buffer, bufferSize);
+  }
 }
 
 // References:
@@ -246,7 +318,8 @@ void readString(char* buffer, int bufferSize) {
 void printProgress(unsigned long eFinished, unsigned long eTotal) {
   struct winsize windowSize;
   ioctl(STDOUT_FILENO, TIOCGWINSZ, &windowSize);
-  unsigned long promptSize = std::max(windowSize.ws_col - 2, 0);
+  unsigned long promptSize =
+      std::max((int)(0.9 * windowSize.ws_col - 2), 0);
   unsigned long finished = (promptSize * eFinished) / eTotal;
   unsigned long total = promptSize;
 
