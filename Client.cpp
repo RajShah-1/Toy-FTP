@@ -11,14 +11,17 @@
 
 #include "common.hpp"
 
+const int PATH_MAX = 100;
+
 int setupSocket(void);
-void readString(char* buffer, int bufferSize);
+void readCMD(char* buffer, int bufferSize);
 void newSend(int socket_fd, const void* buffer, size_t buffer_size);
 int newRecv(int socket_fd, void* buffer, size_t buffer_size);
 size_t getFileSize(FILE* fptr);
 void printProgress(unsigned long eFinished, unsigned long eTotal);
 bool authenticate(int socket_fd, char username[USERNAME_LEN],
                   char password[PASSWORD_LEN]);
+void cd(char command[CMD_SIZE]);
 
 void handleFTP(int socket_fd);
 void handleCommands(int socket_fd, char command[CMD_SIZE], bool& isBinary);
@@ -54,9 +57,7 @@ void handleFTP(int socket_fd) {
   printf("Logged in as %s\n", username);
 
   while (1) {
-    printf(">> ");
-    readString(command, CMD_SIZE);
-    printf("Entered: %s\n", command);
+    readCMD(command, CMD_SIZE);
     try {
       handleCommands(socket_fd, command, isBinary);
     } catch (const char* error_msg) {
@@ -98,8 +99,10 @@ void handleCommands(int socket_fd, char command[CMD_SIZE], bool& isBinary) {
     handleLIST(socket_fd, command);
   } else if ((strcasecmp(cmd_type, "DELETE") == 0)) {
     handleDEL(socket_fd, command);
-  } else if ((strcasecmp(cmd_type, "CHANGE_PASS") == 0)) {
-    throw "Functionality not implemented";
+  } else if ((strcasecmp(cmd_type, "CD") == 0)) {
+    cd(command);
+  } else if ((strcasecmp(cmd_type, "LS") == 0)) {
+    system("ls");
   } else if ((strcasecmp(cmd_type, "EXIT") == 0)) {
     exit(EXIT_SUCCESS);
   } else {
@@ -160,7 +163,7 @@ void handlePUT(int socket_fd, char command[CMD_SIZE], bool isBinary) {
     // if the file is already present on the server
     // ask user whether to abort/overwrite/append
     printf("The file already exists on the server\n");
-    printf("Enter Abort/Overwrite/Append: ");
+    printf("Enter [Abort/Overwrite/Append]: ");
     char option[STATUS_SIZE];
     scanf(" %s", option);
 
@@ -168,7 +171,8 @@ void handlePUT(int socket_fd, char command[CMD_SIZE], bool isBinary) {
         strcasecmp(option, "OVERWRITE") == 0 ||
         strcasecmp(option, "APPEND") == 0) {
       if (strcasecmp(option, "APPEND") == 0 && isBinary) {
-        printf("Append mode is not supported in binary mode\n");
+        printf("Append is not supported in binary mode\n");
+        printf("Aborting...\n");
         newSend(socket_fd, "ABORT", STATUS_SIZE);
         fclose(fptr);
         return;
@@ -385,15 +389,69 @@ int setupSocket(void) {
   return socket_fd;
 }
 
-void readString(char* buffer, int bufferSize) {
+// Taking this snippet from my Basic Shell assignment
+// change directory
+// Supports both absolute and relative paths!
+// No spaces allowed
+void cd(char command[CMD_SIZE]) {
+  char argPath[PATH_MAX];
+  if (sscanf(command, "%*s %s", argPath) != 1) {
+    printf("Enter a valid path!\n");
+    return;
+  }
+  if (argPath == NULL) {
+    printf("Enter a valid path!\n");
+    return;
+  }
+
+  char path[PATH_MAX];
+  strcpy(path, argPath);
+
+  int status = 0;
+  if (argPath[0] != '/') {
+    // Handle relative paths
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, PATH_MAX) == NULL) {
+      printf("Error while obtaining cwd\n");
+      return;
+    }
+    strcat(cwd, "/");
+    strcat(cwd, path);
+    status = chdir(cwd);
+  } else {
+    // Handle absolute paths
+    status = chdir(argPath);
+  }
+  if (status == -1) {
+    printf("Enter a valid path!\n");
+  }
+}
+
+void printPrompt(void) {
+  char cwd[PATH_MAX];
+  if (getcwd(cwd, PATH_MAX) == NULL) {
+    printf("Error while obtaining cwd\n");
+    printf(
+        "\033[1;32m"
+        "\r$"
+        "\033[0m");
+  } else {
+    printf(
+        "\033[1;32m"
+        "\r%s$ "
+        "\033[0m", cwd);
+  }
+}
+
+void readCMD(char* buffer, int bufferSize) {
+  printPrompt();
   fgets(buffer, bufferSize, stdin);
 
   if ((strlen(buffer) > 0) && (buffer[strlen(buffer) - 1] == '\n'))
     buffer[strlen(buffer) - 1] = '\0';
   if (strlen(buffer) == 0) {
     // retry
-    printf("\r>>");
-    readString(buffer, bufferSize);
+    readCMD(buffer, bufferSize);
   }
 }
 
