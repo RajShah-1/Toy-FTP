@@ -18,12 +18,15 @@
 
 void* handleFTP(void* args);
 void handleCommands(int socket_fd, char command[CMD_SIZE],
-                    char username[USERNAME_LEN], bool isBinary);
+                    char username[USERNAME_LEN], bool& isBinary);
 void handleLIST(int socket_fd, char username[USERNAME_LEN]);
 void handleGET(int socket_fd, char command[CMD_SIZE],
                char username[USERNAME_LEN], bool isBinary);
 void handlePUT(int socket_fd, char command[CMD_SIZE],
                char username[USERNAME_LEN], bool isBinary);
+void handleMODE(int socket_fd, char command[CMD_SIZE], bool& isBinary);
+void handleDEL(int socket_fd, char command[CMD_SIZE],
+               char username[USERNAME_LEN]);
 
 int setupSocket(void);
 size_t getFileSize(FILE* fptr);
@@ -82,7 +85,7 @@ void* handleFTP(void* args) {
 }
 
 void handleCommands(int socket_fd, char command[CMD_SIZE],
-                    char username[USERNAME_LEN], bool isBinary) {
+                    char username[USERNAME_LEN], bool& isBinary) {
   char cmd_type[CMD_TYPE_SIZE];
   if (sscanf(command, "%s ", cmd_type) != 1) {
     throw "Invalid command";
@@ -94,11 +97,11 @@ void handleCommands(int socket_fd, char command[CMD_SIZE],
   } else if ((strcasecmp(cmd_type, "PUT") == 0)) {
     handlePUT(socket_fd, command, username, isBinary);
   } else if ((strcasecmp(cmd_type, "MODE") == 0)) {
-    // handleMODE(socket_fd, command);
+    handleMODE(socket_fd, command, isBinary);
   } else if ((strcasecmp(cmd_type, "LIST") == 0)) {
     handleLIST(socket_fd, username);
   } else if ((strcasecmp(cmd_type, "DELETE") == 0)) {
-    // handleDEL(socket_fd, command);
+    handleDEL(socket_fd, command, username);
   } else if ((strcasecmp(cmd_type, "CHANGE_PASS") == 0)) {
     throw "Functionality not implemented";
   } else if ((strcasecmp(cmd_type, "EXIT") == 0)) {
@@ -245,6 +248,55 @@ void handleGET(int socket_fd, char command[CMD_SIZE],
   }
   printf("File sent successfully\n");
   fclose(fptr);
+}
+
+void handleMODE(int socket_fd, char command[CMD_SIZE], bool& isBinary) {
+  char modeOption[STATUS_SIZE];
+  if (sscanf(command, "%*s %s", modeOption) != 1) {
+    throw "Invalid mode option";
+  }
+  if (strcasecmp(modeOption, "BIN") == 0) {
+    printf("Set mode: Binary\n");
+    isBinary = true;
+  } else if (strcasecmp(modeOption, "CHAR") == 0) {
+    printf("Set mode: Character\n");
+    isBinary = false;
+  } else {
+    throw "Invalid mode option";
+  }
+}
+
+void handleDEL(int socket_fd, char command[CMD_SIZE],
+               char username[USERNAME_LEN]) {
+  char filename[CMD_ARG_SIZE];
+  // read the file name and get the file path
+  if (sscanf(command, "%*s %s", filename) != 1) {
+    throw "Invalid filename";
+  }
+  std::string filePath =
+      ("./Server/" + std::string(username) + "/" + std::string(filename));
+  const char* filePathC = filePath.c_str();
+
+  bool isFilePresent = (access(filePathC, F_OK) == 0);
+  if (isFilePresent) {
+    newSend(socket_fd, "FOUND", STATUS_SIZE);
+  } else {
+    newSend(socket_fd, "NOTFOUND", STATUS_SIZE);
+    printf("File %s does not exist\n", filePathC);
+    return;
+  }
+  char status[STATUS_SIZE];
+  newRecv(socket_fd, status, STATUS_SIZE);
+  if (strcasecmp(status, "DEL_ACK") != 0) {
+    printf("Client aborted delete");
+    return;
+  }
+  if (remove(filePathC) == 0) {
+    newSend(socket_fd, "SUCCESS", STATUS_SIZE);
+    printf("%s deleted successfully\n", filePathC);
+  } else {
+    newSend(socket_fd, "FAILED", STATUS_SIZE);
+  }
 }
 
 void newSend(int socket_fd, const void* buffer, size_t buffer_size) {

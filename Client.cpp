@@ -19,10 +19,12 @@ size_t getFileSize(FILE* fptr);
 void printProgress(unsigned long eFinished, unsigned long eTotal);
 
 void handleFTP(int socket_fd);
-void handleCommands(int socket_fd, char command[CMD_SIZE], bool isBinary);
+void handleCommands(int socket_fd, char command[CMD_SIZE], bool& isBinary);
 void handleLIST(int socket_fd, char command[CMD_SIZE]);
 void handleGET(int socket_fd, char command[CMD_SIZE], bool isBinary);
 void handlePUT(int socket_fd, char command[CMD_SIZE], bool isBinary);
+void handleMODE(int socket_fd, char command[CMD_SIZE], bool& isBinary);
+void handleDEL(int socket_fd, char command[CMD_SIZE]);
 
 int main() {
   // setup the connection
@@ -51,7 +53,7 @@ void handleFTP(int socket_fd) {
   }
 }
 
-void handleCommands(int socket_fd, char command[CMD_SIZE], bool isBinary) {
+void handleCommands(int socket_fd, char command[CMD_SIZE], bool& isBinary) {
   char cmd_type[CMD_TYPE_SIZE];
   if (sscanf(command, "%s ", cmd_type) != 1) {
     throw "Invalid command";
@@ -63,11 +65,11 @@ void handleCommands(int socket_fd, char command[CMD_SIZE], bool isBinary) {
   } else if ((strcasecmp(cmd_type, "PUT") == 0)) {
     handlePUT(socket_fd, command, isBinary);
   } else if ((strcasecmp(cmd_type, "MODE") == 0)) {
-    // handleMODE(socket_fd, command);
+    handleMODE(socket_fd, command, isBinary);
   } else if ((strcasecmp(cmd_type, "LIST") == 0)) {
     handleLIST(socket_fd, command);
   } else if ((strcasecmp(cmd_type, "DELETE") == 0)) {
-    // handleDEL(socket_fd, command);
+    handleDEL(socket_fd, command);
   } else if ((strcasecmp(cmd_type, "CHANGE_PASS") == 0)) {
     throw "Functionality not implemented";
   } else if ((strcasecmp(cmd_type, "EXIT") == 0)) {
@@ -133,7 +135,6 @@ void handlePUT(int socket_fd, char command[CMD_SIZE], bool isBinary) {
     printf("Enter Abort/Overwrite/Append: ");
     char option[STATUS_SIZE];
     scanf(" %s", option);
-    printf("You entered: %s\n", option);
 
     if (strcasecmp(option, "ABORT") == 0 ||
         strcasecmp(option, "OVERWRITE") == 0 ||
@@ -144,6 +145,7 @@ void handlePUT(int socket_fd, char command[CMD_SIZE], bool isBinary) {
         return;
       }
     } else {
+      newSend(socket_fd, "ABORT", STATUS_SIZE);
       printf("Invalid option\n");
       return;
     }
@@ -220,6 +222,55 @@ void handleGET(int socket_fd, char command[CMD_SIZE], bool isBinary) {
 
   // close the fd
   fclose(fptr);
+}
+
+void handleMODE(int socket_fd, char command[CMD_SIZE], bool& isBinary) {
+  char modeOption[STATUS_SIZE];
+  if (sscanf(command, "%*s %s", modeOption) != 1) {
+    throw "Invalid mode option";
+  }
+  if (strcasecmp(modeOption, "BIN") == 0) {
+    printf("Transfer mode: Binary\n");
+    newSend(socket_fd, command, CMD_SIZE);
+    isBinary = true;
+  } else if (strcasecmp(modeOption, "CHAR") == 0) {
+    newSend(socket_fd, command, CMD_SIZE);
+    printf("Transfer mode: character\n");
+    isBinary = false;
+  } else {
+    throw "Invalid mode option";
+  }
+}
+
+void handleDEL(int socket_fd, char command[CMD_SIZE]) {
+  char fileName[CMD_ARG_SIZE];
+  if (sscanf(command, "%*s %s", fileName) != 1) {
+    throw "Invalid filename";
+  }
+  // send the command to the server
+  newSend(socket_fd, command, CMD_SIZE);
+  // recv status from the server
+  char status[STATUS_SIZE];
+  newRecv(socket_fd, status, STATUS_SIZE);
+  if (strcasecmp(status, "FOUND") != 0) {
+    printf("File is not availble on the server\n");
+    return;
+  }
+  // confirmation
+  printf("Enter yes to delete %s: ", fileName);
+  scanf(" %s", status);
+  if (strcasecmp(status, "YES") == 0) {
+    newSend(socket_fd, "DEL_ACK", STATUS_SIZE);
+    newRecv(socket_fd, status, STATUS_SIZE);
+    if (strcasecmp(status, "SUCCESS") == 0) {
+      printf("%s deleted successfully\n", fileName);
+    } else {
+      printf("Deletion failed\n");
+    }
+  } else {
+    newSend(socket_fd, "ABORT", STATUS_SIZE);
+    printf("Aborting delete...\n");
+  }
 }
 
 void newSend(int socket_fd, const void* buffer, size_t buffer_size) {
@@ -318,8 +369,7 @@ void readString(char* buffer, int bufferSize) {
 void printProgress(unsigned long eFinished, unsigned long eTotal) {
   struct winsize windowSize;
   ioctl(STDOUT_FILENO, TIOCGWINSZ, &windowSize);
-  unsigned long promptSize =
-      std::max((int)(0.9 * windowSize.ws_col - 2), 0);
+  unsigned long promptSize = std::max((int)(0.9 * windowSize.ws_col - 2), 0);
   unsigned long finished = (promptSize * eFinished) / eTotal;
   unsigned long total = promptSize;
 
