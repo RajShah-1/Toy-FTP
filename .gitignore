@@ -1,4 +1,7 @@
 .vscode
 backup
+out
 build
+./Server/*
+Server
 Clients

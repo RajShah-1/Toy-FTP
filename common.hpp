@@ -1,6 +1,9 @@
 #ifndef __CONSTANTS_H_
 #define __CONSTANTS_H_
 #include <stdarg.h>
+#include <sys/stat.h>
+
+#include <algorithm>
 
 const char* PORT_NUM = "3490";
 const int BUFFER_SIZE = 100;

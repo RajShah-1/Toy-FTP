@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -12,12 +13,14 @@
 
 int setupSocket(void);
 void readString(char* buffer, int bufferSize);
-void newSend(int socket_fd, char* buffer, size_t buffer_size);
-void newRecv(int socket_fd, char* buffer, size_t buffer_size);
+void newSend(int socket_fd, const void* buffer, size_t buffer_size);
+int newRecv(int socket_fd, void* buffer, size_t buffer_size);
+void printProgress(unsigned long eFinished, unsigned long eTotal);
 
 void handleFTP(int socket_fd);
 void handleCommands(int socket_fd, char command[CMD_SIZE]);
 void handleGET(int socket_fd, char command[CMD_SIZE]);
+void handleLIST(int socket_fd, char command[CMD_SIZE]);
 
 int main() {
   // setup the connection
@@ -59,7 +62,7 @@ void handleCommands(int socket_fd, char command[CMD_SIZE]) {
   } else if ((strcasecmp(cmd_type, "MODE") == 0)) {
     // handleMODE(socket_fd, command);
   } else if ((strcasecmp(cmd_type, "LIST") == 0)) {
-    // handleLIST(socket_fd, command);
+    handleLIST(socket_fd, command);
   } else if ((strcasecmp(cmd_type, "DELETE") == 0)) {
     // handleDEL(socket_fd, command);
   } else if ((strcasecmp(cmd_type, "CHANGE_PASS") == 0)) {
@@ -74,10 +77,43 @@ void handleCommands(int socket_fd, char command[CMD_SIZE]) {
 void handleLIST(int socket_fd, char command[CMD_SIZE]) {
   // send the command LIST to the server
   newSend(socket_fd, command, CMD_SIZE);
-  // 
+  // receive the number of files present in the dir
+  size_t numBytes;
+  newRecv(socket_fd, &numBytes, sizeof(size_t));
+  // receive all the file names and file sizes
+  char* filenames = (char*)malloc(numBytes);
+  size_t totalBytesRcvd = 0;
+  while (totalBytesRcvd < numBytes) {
+    size_t numRcvd = newRecv(socket_fd, filenames + totalBytesRcvd, numBytes);
+    totalBytesRcvd += numRcvd;
+  }
+  // print filenames
+  char* filename = strtok(filenames, " ");
+  printf("Files:\n");
+  while (filename != NULL) {
+    printf("\t%s\n", filename);
+    filename = strtok(NULL, " ");
+  }
+  free(filenames);
 }
 
 void handleGET(int socket_fd, char command[CMD_SIZE]) {
+  bool isBinary = true;
+  char filename[CMD_ARG_SIZE];
+  if (sscanf(command, "%*s %s", filename) != 1) {
+    throw "Invalid filename";
+  }
+  // check if the file creation is possible
+  FILE* fptr;
+  // check if we need to create a new file
+  bool isNewFileCreated = (access(filename, F_OK) != 0);
+  if (isBinary)
+    fptr = fopen(filename, "wb");
+  else
+    fptr = fopen(filename, "w");
+
+  if (fptr == NULL) throw "Unable to create the file";
+
   // Send "GET" and the file name
   newSend(socket_fd, command, CMD_SIZE);
   // receive the stauts from the Server (FOUND/NOT_FOUND)
@@ -85,26 +121,75 @@ void handleGET(int socket_fd, char command[CMD_SIZE]) {
   newRecv(socket_fd, status, STATUS_SIZE);
   // if the status is not "FOUND", throw an error
   if (strcasecmp(status, "FOUND") != 0) {
+    fclose(fptr);
+    // if the file is not found and we had to create a new file
+    // remove the newly created file
+    if (isNewFileCreated) {
+      remove(filename);
+    }
     throw "File not found";
-    return;
   }
+
   // receive the file-size
+  size_t filesize;
+  char recvBuffer[BUFFER_SIZE];
+  newRecv(socket_fd, &filesize, sizeof(size_t));
+  printf("Receiving %lu bytes...\n", filesize);
 
   // receive the file packet by packet
+  size_t totBytesRcvd = 0, numBytes = 0;
+  while (totBytesRcvd < filesize) {
+    numBytes = newRecv(socket_fd, recvBuffer,
+                       std::min((size_t)BUFFER_SIZE, filesize - totBytesRcvd));
+    if (fwrite(recvBuffer, sizeof(char), numBytes, fptr) != numBytes) {
+      fclose(fptr);
+      throw "Write error";
+    }
+    totBytesRcvd += numBytes;
+    printProgress(totBytesRcvd, filesize);
+  }
+  // 31993796 975810494
+  printf("\n");
+
+  // close the fd
+  fclose(fptr);
 }
 
-void newSend(int socket_fd, char* buffer, size_t buffer_size) {
+void newSend(int socket_fd, const void* buffer, size_t buffer_size) {
   int status = send(socket_fd, buffer, buffer_size, 0);
   if (status == -1) {
     throw "Send Failed";
   }
 }
 
-void newRecv(int socket_fd, char* buffer, size_t buffer_size) {
-  int status = recv(socket_fd, buffer, buffer_size, 0);
-  if (status == -1) {
+int newRecv(int socket_fd, void* buffer, size_t buffer_size) {
+  int numBytes = recv(socket_fd, buffer, buffer_size, 0);
+  if (numBytes == -1) {
     throw "Recv Failed";
   }
+  if (numBytes == 0) {
+    printf("Connection closed\n");
+    printf("Terminating...\n");
+    exit(EXIT_FAILURE);
+  }
+  return numBytes;
+}
+
+size_t getFileSize(FILE* fptr) {
+  size_t fileSize;
+  struct stat fileInfo;
+  // go to the end of the file
+  if (fseek(fptr, 0L, SEEK_END) != 0) {
+    throw "fseek failed";
+  }
+  // read the current position (gives fileSize)
+  fileSize = ftell(fptr);
+  if (ftell < 0) {
+    throw "ftell failed";
+  }
+  // go back to the start of the file
+  rewind(fptr);
+  return fileSize;
 }
 
 int setupSocket(void) {
@@ -153,4 +238,31 @@ void readString(char* buffer, int bufferSize) {
 
   if ((strlen(buffer) > 0) && (buffer[strlen(buffer) - 1] == '\n'))
     buffer[strlen(buffer) - 1] = '\0';
+}
+
+// References:
+// https://stackoverflow.com/questions/1508490/erase-the-current-printed-console-line/1508589#1508589
+// https://stackoverflow.com/questions/338273/why-does-printf-not-print-anything-before-sleep/338295#338295
+void printProgress(unsigned long eFinished, unsigned long eTotal) {
+  struct winsize windowSize;
+  ioctl(STDOUT_FILENO, TIOCGWINSZ, &windowSize);
+  unsigned long promptSize = std::max(windowSize.ws_col - 2, 0);
+  unsigned long finished = (promptSize * eFinished) / eTotal;
+  unsigned long total = promptSize;
+
+  char buffer[promptSize + 5];
+  buffer[0] = '[';
+  for (unsigned int i = 1; i <= total; ++i) {
+    if (i <= finished - 1 && finished >= 1) {
+      buffer[i] = '=';
+    } else if (i == finished) {
+      buffer[i] = '>';
+    } else {
+      buffer[i] = ' ';
+    }
+  }
+  buffer[promptSize + 1] = ']';
+  buffer[promptSize + 2] = '\0';
+  printf("\r%s", buffer);
+  fflush(stdout);
 }
