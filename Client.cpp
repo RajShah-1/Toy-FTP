@@ -78,7 +78,7 @@ bool authenticate(int socket_fd, char username[USERNAME_LEN],
 
   char status[STATUS_SIZE];
   newRecv(socket_fd, status, STATUS_SIZE);
-  return (strcasecmp(status, "SUCCESS") == 0);  
+  return (strcasecmp(status, "SUCCESS") == 0);
 }
 
 void handleCommands(int socket_fd, char command[CMD_SIZE], bool& isBinary) {
@@ -167,6 +167,12 @@ void handlePUT(int socket_fd, char command[CMD_SIZE], bool isBinary) {
     if (strcasecmp(option, "ABORT") == 0 ||
         strcasecmp(option, "OVERWRITE") == 0 ||
         strcasecmp(option, "APPEND") == 0) {
+      if (strcasecmp(option, "APPEND") == 0 && isBinary) {
+        printf("Append mode is not supported in binary mode\n");
+        newSend(socket_fd, "ABORT", STATUS_SIZE);
+        fclose(fptr);
+        return;
+      }
       newSend(socket_fd, option, STATUS_SIZE);
       if (strcasecmp(option, "ABORT") == 0) {
         fclose(fptr);

@@ -71,8 +71,8 @@ int main() {
 void* handleFTP(void* args) {
   int socket_fd = *(int*)args;
   char command[CMD_SIZE];
-  char username[USERNAME_LEN] = "raj";
-  char password[PASSWORD_LEN] = "raj";
+  char username[USERNAME_LEN];
+  char password[PASSWORD_LEN];
   bool isBinary = true;
   bool isLoggedIn = false;
 
@@ -109,13 +109,15 @@ bool authenticate(int socket_fd, char username[USERNAME_LEN],
     printf("Unable to open auth.txt");
     pthread_exit(NULL);
   }
-  printf("USERS:\n");
+  // printf("USERS:\n");
   char authUsr[USERNAME_LEN], authPass[PASSWORD_LEN];
   while (fscanf(authFptr, " %s %s", authUsr, authPass) == 2) {
-    printf("Entry: %s %s\n", authUsr, authPass);
+    // printf("Entry: %s %s\n", authUsr, authPass);
     if (strcmp(authUsr, username) == 0) {
       if (strcmp(password, authPass) == 0) {
         newSend(socket_fd, "SUCCESS", STATUS_SIZE);
+        fclose(authFptr);
+        return true;
       }
     }
   }
@@ -200,12 +202,11 @@ void handlePUT(int socket_fd, char command[CMD_SIZE],
     char option[STATUS_SIZE];
     newRecv(socket_fd, option, STATUS_SIZE);
     if (strcasecmp(option, "ABORT") == 0) {
-      printf("Aborted PUT\n");
+      printf("PUT conflict -> Abort\n");
       return;
     }
     if (strcasecmp(option, "APPEND") == 0 && !isBinary) {
       printf("PUT conflict -> Append\n");
-      // Append is only supported in char mode
       isAppend = true;
     } else {
       printf("PUT conflict -> Overwrite\n");
@@ -217,6 +218,8 @@ void handlePUT(int socket_fd, char command[CMD_SIZE],
   printf("PUT mode: %s\n", (isBinary ? "Binary" : "Character"));
   if (isBinary)
     fptr = fopen(filePathC, "wb");
+  else if (isAppend)
+    fptr = fopen(filePathC, "a");
   else
     fptr = fopen(filePathC, "w");
 
