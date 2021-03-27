@@ -15,14 +15,6 @@ const int USERNAME_LEN = 30;
 const int PASSWORD_LEN = 30;
 const int STATUS_SIZE = 10;
 
-inline static void write_log(char userName[USERNAME_LEN], const char* format,
-                             ...) {
-  va_list args;
-  va_start(args, format);
-  vprintf(format, args);
-  va_end(args);
-}
-
 inline static void fatal_error_guard(int is_error, const char* err_msg) {
   if (is_error) {
     fprintf(stderr, "%s\n", err_msg);

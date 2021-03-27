@@ -16,17 +16,67 @@
 
 #include "common.hpp"
 
+class UserLogger {
+  std::string userName;
+  FILE* logPtr;
+
+ public:
+  UserLogger(char userNameC[USERNAME_LEN]) {
+    this->userName = std::string(userNameC);
+    const time_t timerTime = time(0);
+    std::string filePath = "./Server/Logs/" + this->userName + "/" +
+                           std::to_string(timerTime) + ".txt";
+    printf("opening %s\n", filePath.c_str());
+    logPtr = fopen(filePath.c_str(), "w");
+    if (logPtr == NULL) {
+      printf("Unable to open the log file\n");
+      printf("Server will continue to serve without logging to a file\n");
+    }
+  }
+
+  ~UserLogger() {
+    writeLog("Terminated\n");
+    fclose(logPtr);
+  }
+
+  const char* getUserNameC(void) { return this->userName.c_str(); }
+  std::string getUserName(void) { return this->userName; }
+
+  void writeLog(const char* format, ...) {
+    const time_t timerTime = time(0);
+    struct tm* currTime = localtime(&timerTime);
+    char dateStr[100];
+    sprintf(dateStr, "%02d/%02d/%04d %02d:%02d:%02d", currTime->tm_mday,
+            1 + currTime->tm_mon, 1900 + currTime->tm_year, currTime->tm_hour,
+            currTime->tm_min, currTime->tm_sec);
+
+    va_list args;
+    printf("[%s] [%s] ", userName.c_str(), dateStr);
+    if (this->logPtr != NULL) {
+      fprintf(logPtr, "[%s] [%s] ", userName.c_str(), dateStr);
+    }
+    va_start(args, format);
+    vprintf(format, args);
+    va_end(args);
+    if (this->logPtr != NULL) {
+      va_start(args, format);
+      vfprintf(logPtr, format, args);
+      va_end(args);
+    }
+  }
+};
+
 void* handleFTP(void* args);
-void handleCommands(int socket_fd, char command[CMD_SIZE],
-                    char username[USERNAME_LEN], bool& isBinary);
-void handleLIST(int socket_fd, char username[USERNAME_LEN]);
-void handleGET(int socket_fd, char command[CMD_SIZE],
-               char username[USERNAME_LEN], bool isBinary);
-void handlePUT(int socket_fd, char command[CMD_SIZE],
-               char username[USERNAME_LEN], bool isBinary);
-void handleMODE(int socket_fd, char command[CMD_SIZE], bool& isBinary);
-void handleDEL(int socket_fd, char command[CMD_SIZE],
-               char username[USERNAME_LEN]);
+void handleCommands(int socket_fd, char command[CMD_SIZE], UserLogger& currUser,
+                    bool& isBinary);
+void handleLIST(int socket_fd, UserLogger& currUser);
+void handleGET(int socket_fd, char command[CMD_SIZE], UserLogger& currUser,
+               bool isBinary);
+void handlePUT(int socket_fd, char command[CMD_SIZE], UserLogger& currUser,
+               bool isBinary);
+void handleMODE(int socket_fd, char command[CMD_SIZE], UserLogger& currUser,
+                bool& isBinary);
+void handleDEL(int socket_fd, char command[CMD_SIZE], UserLogger& currUser);
 
 int setupSocket(void);
 size_t getFileSize(FILE* fptr);
@@ -84,12 +134,13 @@ void* handleFTP(void* args) {
     }
   }
   printf("%s logged in\n", username);
+  UserLogger currUser(username);
 
   try {
     while (1) {
       newRecv(socket_fd, command, CMD_SIZE);
       printf("Received: %s\n", command);
-      handleCommands(socket_fd, command, username, isBinary);
+      handleCommands(socket_fd, command, currUser, isBinary);
     }
     return NULL;
   } catch (const char* error_msg) {
@@ -126,8 +177,8 @@ bool authenticate(int socket_fd, char username[USERNAME_LEN],
   return false;
 }
 
-void handleCommands(int socket_fd, char command[CMD_SIZE],
-                    char username[USERNAME_LEN], bool& isBinary) {
+void handleCommands(int socket_fd, char command[CMD_SIZE], UserLogger& currUser,
+                    bool& isBinary) {
   char cmd_type[CMD_TYPE_SIZE];
   if (sscanf(command, "%s ", cmd_type) != 1) {
     throw "Invalid command";
@@ -135,15 +186,15 @@ void handleCommands(int socket_fd, char command[CMD_SIZE],
   printf("Command Type: %s\n", cmd_type);
 
   if (strcasecmp(cmd_type, "GET") == 0) {
-    handleGET(socket_fd, command, username, isBinary);
+    handleGET(socket_fd, command, currUser, isBinary);
   } else if ((strcasecmp(cmd_type, "PUT") == 0)) {
-    handlePUT(socket_fd, command, username, isBinary);
+    handlePUT(socket_fd, command, currUser, isBinary);
   } else if ((strcasecmp(cmd_type, "MODE") == 0)) {
-    handleMODE(socket_fd, command, isBinary);
+    handleMODE(socket_fd, command, currUser, isBinary);
   } else if ((strcasecmp(cmd_type, "LIST") == 0)) {
-    handleLIST(socket_fd, username);
+    handleLIST(socket_fd, currUser);
   } else if ((strcasecmp(cmd_type, "DELETE") == 0)) {
-    handleDEL(socket_fd, command, username);
+    handleDEL(socket_fd, command, currUser);
   } else if ((strcasecmp(cmd_type, "CHANGE_PASS") == 0)) {
     throw "Functionality not implemented";
   } else if ((strcasecmp(cmd_type, "EXIT") == 0)) {
@@ -153,12 +204,12 @@ void handleCommands(int socket_fd, char command[CMD_SIZE],
   }
 }
 
-void handleLIST(int socket_fd, char username[USERNAME_LEN]) {
-  printf("LIST\n");
+void handleLIST(int socket_fd, UserLogger& currUser) {
+  currUser.writeLog("LIST\n");
   // open the dir
   DIR* dir;
   struct dirent* dir_entry;
-  std::string dir_path = "./Server/" + std::string(username);
+  std::string dir_path = "./Server/" + currUser.getUserName();
   dir = opendir(dir_path.c_str());
   // make a space seperated list of filenames
   std::string fileNames = "";
@@ -180,8 +231,8 @@ void handleLIST(int socket_fd, char username[USERNAME_LEN]) {
   newSend(socket_fd, fileNamesC, numbytes);
 }
 
-void handlePUT(int socket_fd, char command[CMD_SIZE],
-               char username[USERNAME_LEN], bool isBinary) {
+void handlePUT(int socket_fd, char command[CMD_SIZE], UserLogger& currUser,
+               bool isBinary) {
   char argFileName[CMD_ARG_SIZE];
   if (sscanf(command, "%*s %s", argFileName) != 1) {
     throw "Invalid filename";
@@ -190,7 +241,7 @@ void handlePUT(int socket_fd, char command[CMD_SIZE],
   FILE* fptr;
 
   std::string filePath =
-      ("./Server/" + std::string(username) + "/" + std::string(argFileName));
+      ("./Server/" + currUser.getUserName() + "/" + std::string(argFileName));
   const char* filePathC = filePath.c_str();
   // check if we need to create a new file
   bool isFilePresent = (access(filePathC, F_OK) == 0);
@@ -202,20 +253,20 @@ void handlePUT(int socket_fd, char command[CMD_SIZE],
     char option[STATUS_SIZE];
     newRecv(socket_fd, option, STATUS_SIZE);
     if (strcasecmp(option, "ABORT") == 0) {
-      printf("PUT conflict -> Abort\n");
+      currUser.writeLog("PUT conflict -> Abort\n");
       return;
     }
     if (strcasecmp(option, "APPEND") == 0 && !isBinary) {
-      printf("PUT conflict -> Append\n");
+      currUser.writeLog("PUT conflict -> Append\n");
       isAppend = true;
     } else {
-      printf("PUT conflict -> Overwrite\n");
+      currUser.writeLog("PUT conflict -> Overwrite\n");
     }
   } else {
     // Send FOUND
     newSend(socket_fd, "NOTFOUND", STATUS_SIZE);
   }
-  printf("PUT mode: %s\n", (isBinary ? "Binary" : "Character"));
+  currUser.writeLog("PUT mode: %s\n", (isBinary ? "Binary" : "Character"));
   if (isBinary)
     fptr = fopen(filePathC, "wb");
   else if (isAppend)
@@ -229,7 +280,7 @@ void handlePUT(int socket_fd, char command[CMD_SIZE],
   size_t filesize;
   char recvBuffer[BUFFER_SIZE];
   newRecv(socket_fd, &filesize, sizeof(size_t));
-  printf("File size %lu bytes\n", filesize);
+  currUser.writeLog("File size %lu bytes\n", filesize);
 
   // receive the file packet by packet
   size_t totBytesRcvd = 0, numBytes = 0;
@@ -242,22 +293,22 @@ void handlePUT(int socket_fd, char command[CMD_SIZE],
     }
     totBytesRcvd += numBytes;
   }
-  printf("File received successfully\n");
+  currUser.writeLog("File received successfully\n");
 
   // close the fd
   fclose(fptr);
 }
 
-void handleGET(int socket_fd, char command[CMD_SIZE],
-               char username[USERNAME_LEN], bool isBinary) {
+void handleGET(int socket_fd, char command[CMD_SIZE], UserLogger& currUser,
+               bool isBinary) {
   char filename[CMD_ARG_SIZE];
   // read the file name and get the file path
   if (sscanf(command, "%*s %s", filename) != 1) {
     throw "Invalid filename";
   }
   std::string filePath =
-      ("./Server/" + std::string(username) + "/" + std::string(filename));
-  printf("GET %s\n", filePath.c_str());
+      ("./Server/" + currUser.getUserName() + "/" + std::string(filename));
+  currUser.writeLog("GET %s\n", filePath.c_str());
   // try opening the file
   FILE* fptr;
   if (isBinary)
@@ -267,7 +318,7 @@ void handleGET(int socket_fd, char command[CMD_SIZE],
 
   if (fptr == NULL) {
     newSend(socket_fd, "NOTFOUND", STATUS_SIZE);
-    printf("File not found\n");
+    currUser.writeLog("File not found\n");
     return;
   } else {
     newSend(socket_fd, "FOUND", STATUS_SIZE);
@@ -289,35 +340,35 @@ void handleGET(int socket_fd, char command[CMD_SIZE],
     newSend(socket_fd, sendBuffer, numBytes);
     totBytesSent += numBytes;
   }
-  printf("File sent successfully\n");
+  currUser.writeLog("File sent successfully\n");
   fclose(fptr);
 }
 
-void handleMODE(int socket_fd, char command[CMD_SIZE], bool& isBinary) {
+void handleMODE(int socket_fd, char command[CMD_SIZE], UserLogger& currUser,
+                bool& isBinary) {
   char modeOption[STATUS_SIZE];
   if (sscanf(command, "%*s %s", modeOption) != 1) {
     throw "Invalid mode option";
   }
   if (strcasecmp(modeOption, "BIN") == 0) {
-    printf("Set mode: Binary\n");
+    currUser.writeLog("Set mode: Binary\n");
     isBinary = true;
   } else if (strcasecmp(modeOption, "CHAR") == 0) {
-    printf("Set mode: Character\n");
+    currUser.writeLog("Set mode: Character\n");
     isBinary = false;
   } else {
     throw "Invalid mode option";
   }
 }
 
-void handleDEL(int socket_fd, char command[CMD_SIZE],
-               char username[USERNAME_LEN]) {
+void handleDEL(int socket_fd, char command[CMD_SIZE], UserLogger& currUser) {
   char filename[CMD_ARG_SIZE];
   // read the file name and get the file path
   if (sscanf(command, "%*s %s", filename) != 1) {
     throw "Invalid filename";
   }
   std::string filePath =
-      ("./Server/" + std::string(username) + "/" + std::string(filename));
+      ("./Server/" + currUser.getUserName() + "/" + std::string(filename));
   const char* filePathC = filePath.c_str();
 
   bool isFilePresent = (access(filePathC, F_OK) == 0);
@@ -325,18 +376,18 @@ void handleDEL(int socket_fd, char command[CMD_SIZE],
     newSend(socket_fd, "FOUND", STATUS_SIZE);
   } else {
     newSend(socket_fd, "NOTFOUND", STATUS_SIZE);
-    printf("File %s does not exist\n", filePathC);
+    currUser.writeLog("File %s does not exist\n", filePathC);
     return;
   }
   char status[STATUS_SIZE];
   newRecv(socket_fd, status, STATUS_SIZE);
   if (strcasecmp(status, "DEL_ACK") != 0) {
-    printf("Client aborted delete");
+    currUser.writeLog("Client aborted delete");
     return;
   }
   if (remove(filePathC) == 0) {
     newSend(socket_fd, "SUCCESS", STATUS_SIZE);
-    printf("%s deleted successfully\n", filePathC);
+    currUser.writeLog("%s deleted successfully\n", filePathC);
   } else {
     newSend(socket_fd, "FAILED", STATUS_SIZE);
   }
