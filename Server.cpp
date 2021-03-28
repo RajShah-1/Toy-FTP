@@ -37,6 +37,7 @@ class UserLogger {
     }
     // add user to the activeUsers set
     activeUsers.insert(this->userName);
+    writeLog("User logged in\n");
   }
 
   ~UserLogger() {
@@ -195,7 +196,7 @@ void handleCommands(int socket_fd, char command[CMD_SIZE], UserLogger& currUser,
   if (sscanf(command, "%s ", cmd_type) != 1) {
     throw "Invalid command";
   }
-  printf("Command Type: %s\n", cmd_type);
+  // printf("Command Type: %s\n", cmd_type);
 
   if (strcasecmp(cmd_type, "GET") == 0) {
     handleGET(socket_fd, command, currUser, isBinary);
@@ -382,6 +383,7 @@ void handleDEL(int socket_fd, char command[CMD_SIZE], UserLogger& currUser) {
   std::string filePath = ("./Server/" + currUser.getUserName() + "/" +
                           std::string(sanitizeFileName(filename)));
   const char* filePathC = filePath.c_str();
+  currUser.writeLog("DELETE %s\n", filename);
 
   bool isFilePresent = (access(filePathC, F_OK) == 0);
   if (isFilePresent) {
@@ -389,6 +391,7 @@ void handleDEL(int socket_fd, char command[CMD_SIZE], UserLogger& currUser) {
   } else {
     newSend(socket_fd, "NOTFOUND", STATUS_SIZE);
     currUser.writeLog("File %s does not exist\n", filePathC);
+    currUser.writeLog("Aborted delete\n");
     return;
   }
   char status[STATUS_SIZE];

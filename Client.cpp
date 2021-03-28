@@ -90,7 +90,7 @@ void handleCommands(int socket_fd, char command[CMD_SIZE], bool& isBinary) {
   if (sscanf(command, "%s ", cmd_type) != 1) {
     throw "Invalid command";
   }
-  printf("Command Type: %s\n", cmd_type);
+  // printf("Command Type: %s\n", cmd_type);
 
   if (strcasecmp(cmd_type, "GET") == 0) {
     handleGET(socket_fd, command, isBinary);

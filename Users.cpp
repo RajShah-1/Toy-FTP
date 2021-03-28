@@ -26,7 +26,7 @@ int main() {
 }
 
 void removeUser(void) {
-  FILE* authFptrOrg = fopen(authFile, "w+");
+  FILE* authFptrOrg = fopen(authFile, "r");
   FILE* authFptrDup = fopen("tmp.txt", "w+");
   if (authFptrOrg == NULL) {
     printf("Unable to open auth.txt");
@@ -46,19 +46,23 @@ void removeUser(void) {
   // Copy all the usernames to authUsrDup except the one that is to be deleted
   while (fscanf(authFptrOrg, " %s %s", username, password) == 2) {
     if (strcmp(username, enteredUserName) != 0) {
+      printf("%s %s\n", username, password);
       fprintf(authFptrDup, "%s %s\n", username, password);
     } else {
       // remove the directory of the deleted user
-      char rmCmd[20 + USERNAME_LEN] = "exec rm -r ";
-      strcat(rmCmd, username);
-      system(rmCmd);
-      // fclose(authFptrOrg);
-      // fclose(authFptrDup);
-      // remove("tmp.txt");
+      char rmCmdDir[20 + 15 + USERNAME_LEN] = "exec rm -r ./Server/";
+      char rmCmdLog[20 + 15 + USERNAME_LEN] = "exec rm -r ./Server/Logs/";
+      strcat(rmCmdDir, username);
+      strcat(rmCmdLog, username);
+      printf("Executing %s\n", rmCmdDir);
+      system(rmCmdDir);
+      printf("Executing %s\n", rmCmdLog);
+      system(rmCmdLog);
     }
   }
-  rewind(authFptrOrg);
   rewind(authFptrDup);
+  authFptrOrg = fopen(authFile, "w");
+  
   // Copy authUsrDup to authUsrOrg
   while (fscanf(authFptrDup, " %s %s", username, password) == 2) {
     fprintf(authFptrOrg, "%s %s\n", username, password);
@@ -87,8 +91,10 @@ void createUser(void) {
   }
   // create a directory for that user
   char dirPath[15 + USERNAME_LEN] = "./Server/";
+  char logPath[20 + USERNAME_LEN] = "./Server/Logs/";
   strcat(dirPath, username);
-  if (mkdir(dirPath, 0777) != 0) {
+  strcat(logPath, username);
+  if (mkdir(dirPath, 0777) != 0 || mkdir(logPath, 0777) != 0) {
     printf("Error while creating the user directory\n");
     printf("\tUsername should not contain / \n");
     printf("\tUsername can't be \"Logs\"\n");

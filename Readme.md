@@ -1,3 +1,30 @@
+## Compiling and Running the code
+- Run 'sh build.sh'
+- To start the Server ./out/Server
+- To start the Client ./out/Client
+- To start the user-creation functionalities ./out/Users
+
+## Note:
+  - The submission contains log files of User1 and auth.txt just for refernce
+  - None of the commands are case-sensitive (cd and CD are considered as same)
+  - prev.zip contains my previous submission (just for refernce)
+
+## Featues 
+  - Whenever a new client is connected, server creates a new "detached" thread.
+    - When  a  detached  thread  terminates,  its resources  are  automatically released
+      back to the system without the need for another thread to join with 
+      the terminated thread.
+  - So this code can ideally support any number of clients when the resources are sufficient
+  - Even if the client abruptly closes the connection, the Server can detect 
+    that and terminates thread after removing the user from the activeUsersList
+  - All file paths are sanitized on the Server side. 
+    - So, a Client can only access the files on the Server that are present in his directory
+    - Example: If filepath= ../OtherUser/SuperSecret.txt,
+               then sanitized filepath=./SuperSecret.txt 
+    - So, even if User1 enters GET ../OtherUser/SuperSecret.txt, 
+      he can't access SuperSecret.txt stored by OtherUser.
+      (If User1's directory contains SuperSecret.txt, he will get that file from the server)
+
 ## Client-side Functionalities:
 - Authentication
   - Use username and password to login
@@ -30,14 +57,15 @@
   - Displays all the files in the curent directory 
     (SHOW is used to display all the files uploaded by the client to the server)
 
+- EXIT
+  - Terminate the FTP client
+
 ## User-creation functionalities:
 
-
-## Note:
-  - None of the commands are case-sensitive (cd and CD are considered as same)
-  - All file paths are sanitized on the Server side. 
-    - So, A Client can only access the files on the Server that are present in his directory
-    - Example: If filepath= ../OtherUser/SuperSecret.txt,
-                sanitized filepath=./SuperSecret.txt 
-    - So, even if User1 gives ../OtherUser/SuperSecret.txt as a filepath, 
-      he can't access SuperSecret.txt stored by OtherUser.
+- create {username} {password}
+- remove {username}
+- NOTE:
+  - It is advisable to run Users.cpp on the server side only 
+    after terminating the server application.
+  - The create/remove command will automatically create/remove appropriate directories.
+  - The username must not contain '/'.
