@@ -13,8 +13,11 @@
 #include <unistd.h>
 
 #include <string>
+#include <unordered_set>
 
 #include "common.hpp"
+
+std::unordered_set<std::string> activeUsers;
 
 class UserLogger {
   std::string userName;
@@ -32,10 +35,14 @@ class UserLogger {
       printf("Unable to open the log file\n");
       printf("Server will continue to serve without logging to a file\n");
     }
+    // add user to the activeUsers set
+    activeUsers.insert(this->userName);
   }
 
   ~UserLogger() {
     writeLog("Terminated\n");
+    // remover user from the activeUsers set
+    activeUsers.erase(this->userName);
     fclose(logPtr);
   }
 
@@ -80,6 +87,7 @@ void handleDEL(int socket_fd, char command[CMD_SIZE], UserLogger& currUser);
 
 int setupSocket(void);
 size_t getFileSize(FILE* fptr);
+std::string sanitizeFileName(std::string filePath);
 int newRecv(int socket_fd, void* buffer, size_t buffer_size);
 void newSend(int socket_fd, const void* buffer, size_t buffer_size);
 bool authenticate(int socket_fd, char username[USERNAME_LEN],
@@ -166,9 +174,13 @@ bool authenticate(int socket_fd, char username[USERNAME_LEN],
     // printf("Entry: %s %s\n", authUsr, authPass);
     if (strcmp(authUsr, username) == 0) {
       if (strcmp(password, authPass) == 0) {
-        newSend(socket_fd, "SUCCESS", STATUS_SIZE);
         fclose(authFptr);
-        return true;
+        if (activeUsers.find(std::string(username)) == activeUsers.end()) {
+          newSend(socket_fd, "SUCCESS", STATUS_SIZE);
+          return true;
+        }
+        newSend(socket_fd, "ACTIVE", STATUS_SIZE);
+        return false;
       }
     }
   }
@@ -240,8 +252,8 @@ void handlePUT(int socket_fd, char command[CMD_SIZE], UserLogger& currUser,
   // check if the file creation is possible
   FILE* fptr;
 
-  std::string filePath =
-      ("./Server/" + currUser.getUserName() + "/" + std::string(argFileName));
+  std::string filePath = ("./Server/" + currUser.getUserName() + "/" +
+                          std::string(sanitizeFileName(argFileName)));
   const char* filePathC = filePath.c_str();
   // check if we need to create a new file
   bool isFilePresent = (access(filePathC, F_OK) == 0);
@@ -306,8 +318,8 @@ void handleGET(int socket_fd, char command[CMD_SIZE], UserLogger& currUser,
   if (sscanf(command, "%*s %s", filename) != 1) {
     throw "Invalid filename";
   }
-  std::string filePath =
-      ("./Server/" + currUser.getUserName() + "/" + std::string(filename));
+  std::string filePath = ("./Server/" + currUser.getUserName() + "/" +
+                          std::string(sanitizeFileName(filename)));
   currUser.writeLog("GET %s\n", filePath.c_str());
   // try opening the file
   FILE* fptr;
@@ -367,8 +379,8 @@ void handleDEL(int socket_fd, char command[CMD_SIZE], UserLogger& currUser) {
   if (sscanf(command, "%*s %s", filename) != 1) {
     throw "Invalid filename";
   }
-  std::string filePath =
-      ("./Server/" + currUser.getUserName() + "/" + std::string(filename));
+  std::string filePath = ("./Server/" + currUser.getUserName() + "/" +
+                          std::string(sanitizeFileName(filename)));
   const char* filePathC = filePath.c_str();
 
   bool isFilePresent = (access(filePathC, F_OK) == 0);
@@ -428,6 +440,14 @@ size_t getFileSize(FILE* fptr) {
   // go back to the start of the file
   rewind(fptr);
   return fileSize;
+}
+
+std::string sanitizeFileName(std::string filePath) {
+  const size_t last_slash_idx = filePath.find_last_of("/");
+  if (std::string::npos != last_slash_idx) {
+    filePath.erase(0, last_slash_idx + 1);
+  }
+  return filePath;
 }
 
 int setupSocket(void) {

@@ -79,6 +79,9 @@ bool authenticate(int socket_fd, char username[USERNAME_LEN],
 
   char status[STATUS_SIZE];
   newRecv(socket_fd, status, STATUS_SIZE);
+  if ((strcasecmp(status, "ACTIVE") == 0)) {
+    printf("User is already active\n");
+  }
   return (strcasecmp(status, "SUCCESS") == 0);
 }
 
@@ -439,7 +442,8 @@ void printPrompt(void) {
     printf(
         "\033[1;32m"
         "\r%s$ "
-        "\033[0m", cwd);
+        "\033[0m",
+        cwd);
   }
 }
 
